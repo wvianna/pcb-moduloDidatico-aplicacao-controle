@@ -15,9 +15,9 @@
 // ---------------------------------------------------------------------------
 // Sensor de temperatura (DS18B20)
 // ---------------------------------------------------------------------------
-#define SENSOR_CONVERSION_MS   800  // tempo mínimo de conversão do DS18B20 (12 bits ~750 ms + margem)
+#define SENSOR_CONVERSION_MS   1000  // tempo mínimo de conversão do DS18B20 (12 bits ~750 ms + margem)
 #define SENSOR_RESOLUTION_BITS 12   // resolução do DS18B20
-#define SENSOR_FILTER_N        5    // amostras da média móvel (filtro da PV)
+#define SENSOR_FILTER_N        1    // amostras da média móvel (filtro da PV)
 #define SENSOR_TIMEOUT_MS      3000 // falha de segurança se nenhuma amostra chegar em 3 s
 #define SENSOR_FAIL_THRESHOLD  3    // nº de falhas consecutivas para marcar erro de sensor
 
@@ -52,7 +52,7 @@
 #define PID_KI_MAX        100.0f // limite do termo integral (anti-windup)
 
 // Ganhos padrão (sobrescritos em runtime / autotuning)
-#define PID_DEFAULT_KP    1.5f
+#define PID_DEFAULT_KP    1.1f
 #define PID_DEFAULT_KI    0.2f
 #define PID_DEFAULT_KD    0.05f
 
@@ -86,5 +86,5 @@
 // ---------------------------------------------------------------------------
 // Servidor HTTP / dashboard
 // ---------------------------------------------------------------------------
-#define POLLING_INTERVAL_MS  500   // intervalo de polling do dashboard (fetch)
+#define POLLING_INTERVAL_MS  1000   // intervalo de polling do dashboard (fetch)
 #define HTTP_SERVER_PORT     80
