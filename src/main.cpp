@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <ESP8266WiFi.h>
+#include <OneWire.h>
 #include "config.h"
 #include "state.h"
 #include "sensors.h"
@@ -19,11 +20,39 @@ WebServer web;
 static uint32_t loadWindowStart = 0;  // início da janela de 1 s
 static uint32_t busyMicros      = 0;  // tempo "ocupado" acumulado (µs)
 
+// ---------------------------------------------------------------------------
+// Diagnóstico: varredura OneWire em vários pinos (procura o DS18B20).
+// ---------------------------------------------------------------------------
+static void scanOneWirePins() {
+  const int pins[] = {4, 2, 14, 12, 13, 5, 0, 15, 16};  // D2,D4,D5,D6,D7,D1,D3,D8,D0
+  Serial.println(F("[ONEWIRE] Varredura multi-pino..."));
+  for (unsigned i = 0; i < sizeof(pins) / sizeof(pins[0]); ++i) {
+    int pin = pins[i];
+    OneWire ow(pin);
+    uint8_t addr[8];
+    int n = 0;
+    ow.reset_search();
+    while (ow.search(addr)) {
+      if (OneWire::crc8(addr, 7) != addr[7]) {
+        Serial.printf("[ONEWIRE] GPIO%d: ROM com CRC invalido\n", pin);
+        continue;
+      }
+      ++n;
+      Serial.printf("[ONEWIRE] GPIO%d: ROM %02X %02X %02X %02X %02X %02X %02X %02X\n",
+                    pin, addr[0], addr[1], addr[2], addr[3], addr[4], addr[5], addr[6], addr[7]);
+    }
+    bool present = ow.reset();   // reset + presence
+    Serial.printf("[ONEWIRE] GPIO%d: devices=%d presence=%d\n", pin, n, present ? 1 : 0);
+  }
+  Serial.println(F("[ONEWIRE] Varredura concluida."));
+}
+
 void setup() {
   Serial.begin(115200);
   Serial.println();
   Serial.printf("[BOOT] Sistema de controle termico inic. | CPU=%lu MHz\n",
                 (unsigned long)ESP.getCpuFreqMHz());
+  scanOneWirePins();   // diagnóstico: localiza o sensor OneWire
   cs = state_init();
   sensor.begin();
   heater.begin();
@@ -58,11 +87,12 @@ void loop() {
   static uint32_t lastStatusMs = 0;
   if ((uint32_t)(millis() - lastStatusMs) >= 2000) {
     lastStatusMs = millis();
-    Serial.printf("[STATUS] PV=%.1f MV=%.1f SP=%.1f modo=%s alarm=%s sensor=%s enP=%d enD=%d\n",
+    Serial.printf("[STATUS] PV=%.1f MV=%.1f SP=%.1f modo=%s alarm=%s sensor=%s enP=%d enD=%d dev=%d\n",
                   cs.pv, cs.mv, cs.setpoint, modoToString(cs.modo),
                   (cs.alarm == EstadoAlarme::ALARME) ? "ON" : "OFF",
                   cs.sensor_fail ? "FAIL" : "OK",
-                  cs.pid.enableP ? 1 : 0, cs.pid.enableD ? 1 : 0);
+                  cs.pid.enableP ? 1 : 0, cs.pid.enableD ? 1 : 0,
+                  sensor.deviceFound() ? 1 : 0);
   }
 
   busyMicros += (uint32_t)(micros() - t0);   // acumula o tempo de trabalho

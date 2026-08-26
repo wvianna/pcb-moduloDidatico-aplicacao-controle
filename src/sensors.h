@@ -9,10 +9,11 @@
 
 class TempSensor {
 public:
-  void begin();                 // inicializa barramento e resolução
+  void begin();                 // inicializa barramento e faz a varredura OneWire
   void tick();                  // chame a cada loop(); gerencia a conversão
   float getPV() const { return latest_; }   // leitura bruta (°C) — sem média
   bool  isFault() const { return fault_; }     // falha de leitura (após falhas consecutivas)
+  bool  deviceFound() const { return deviceFound_; }  // sensor encontrado na varredura
   bool  readReady() const { return newSample_; }  // nova amostra neste ciclo
   void  clearReady() { newSample_ = false; }
 
@@ -24,7 +25,9 @@ private:
   Phase    phase_;
   uint32_t convertStartMs_;
   float    latest_;      // última leitura válida (bruta)
-  uint8_t  failCount_;  // falhas consecutivas
+  uint8_t  failCount_;   // falhas consecutivas
   bool     fault_;
   bool     newSample_;
+  bool     deviceFound_; // dispositivo presente na varredura
+  uint8_t  addr_[8];     // endereço ROM do DS18B20 (varredura)
 };
