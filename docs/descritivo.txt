@@ -1,0 +1,118 @@
+Especificação de Requisitos Técnicos: Sistema de Controle Térmico (NodeMCU ESP8266)
+
+1. Arquitetura de Hardware e Configuração de Dispositivos
+
+A seleção criteriosa da plataforma NodeMCU (ESP12E) é fundamental para garantir a estabilidade térmica e a segurança operacional deste sistema embarcado. Dada a natureza crítica do controle de temperatura, a arquitetura deve suportar não apenas o processamento da malha de controle PID, mas também a gestão concorrente de uma interface web e protocolos de segurança, exigindo uma integração de hardware que minimize ruídos de sinal e maximize a confiabilidade da atuação.
+
+Especificação dos Componentes
+
+Componente	Papel Crítico na Malha de Controle
+NodeMCU (ESP12E)	Unidade central de processamento. Gerencia o Web Server, executa o cálculo PID e controla os periféricos via GPIOs.
+Sensor de Temperatura	Fornece a Variável de Processo (PV). Requer amostragem precisa para evitar instabilidade na malha fechada.
+Resistência de Aquecimento	Atuador final (Variável Manipulada - MV). Controlado via sinal PWM para ajuste gradual de potência térmica.
+Buzzer	Indicador crítico de segurança para alarmes sonoros em situações de sobreaquecimento.
+
+
+Mapeamento de I/O e Sinais
+
+A precisão da leitura em graus Celsius é o pilar do sucesso da malha fechada. Para o controle da resistência, deve-se utilizar a saída PWM com resolução de 10 bits (0 a 1023), mapeada internamente pela lógica de controle para a escala de 0 a 100% da interface. A integração entre a leitura analógica (ou digital, dependendo do sensor) e a saída de potência deve ser tratada com algoritmos de filtragem para garantir que o ruído não interfira no cálculo derivativo do PID.
+
+A integridade física e o correto mapeamento desses sinais são o que permitem a execução segura das rotinas de alarme e proteção detalhadas a seguir.
+
+2. Lógica de Segurança e Sistema de Alarme
+
+A implementação de uma lógica de alarme com histerese é vital para a proteção do hardware e a preservação da integridade do processo térmico. Mais do que um simples alerta, este mecanismo funciona como um interlock de segurança que previne o desgaste excessivo do atuador e protege o sistema contra falhas catastróficas de sobreaquecimento.
+
+Especificação do Comportamento do Alarme
+
+O sistema de alarme deve operar sob regras estritas de execução:
+
+* Gatilho de Ativação: O estado de alarme deve ser disparado imediatamente quando a temperatura atingir 80°C.
+* Cadência Sonora (Non-blocking): O sinal sonoro deve consistir em um bip de 150ms a cada 2 segundos. É obrigatória a implementação via lógica de temporização não-bloqueante (millis()), garantindo que o buzzer não interrompa o processamento do PID ou as requisições do Web Server.
+* Histerese de Desativação: O alarme e o buzzer só serão desligados quando a temperatura recuar para um valor abaixo de 75°C.
+
+Diagrama de Estados Lógicos (Monitoramento de Segurança)
+
+Estado Atual	Condição de Entrada	Ação de Saída	Próximo Estado
+NORMAL	Temperatura >= 80°C	Ativar Buzzer (intermitente)	ALARME
+ALARME	Temperatura > 75°C	Manter Buzzer (intermitente)	ALARME
+ALARME	Temperatura <= 75°C	Desativar Buzzer	NORMAL
+
+Este mecanismo impede o fenômeno de chattering (oscilação rápida de estados) próximo ao limite crítico, garantindo estabilidade ao sistema de proteção sonora e visual.
+
+3. Algoritmo de Controle PID e Modos de Operação
+
+O controle térmico é regido por um algoritmo PID (Proporcional, Integral e Derivativo) de alta precisão. A versatilidade entre malha aberta e fechada é essencial para permitir tanto a calibração manual do hardware quanto o regime automático de estabilização térmica.
+
+Parâmetros do Controlador
+
+O sistema deve permitir o ajuste fino das constantes, com uma interface que reflita as seguintes regras:
+
+* Proporcional (P): Ganho de resposta imediata ao erro. Possui checkbox para habilitar/desabilitar.
+* Integral (I): Eliminação do erro de regime permanente. Não possui checkbox de desativação (sempre ativo se o PID estiver em execução).
+* Derivativo (D): Amortecimento de oscilações e antecipação de tendências. Possui checkbox para habilitar/desabilitar.
+
+Lógica de Sintonia e Modos
+
+1. Modo Manual (Malha Aberta): O usuário define diretamente a potência da resistência via ajuste gráfico de 0 a 100% (PWM). Ao entrar neste modo, o cálculo PID deve ser pausado e resetado para evitar o acúmulo de erro (Integral Windup).
+2. Modo Automático (Malha Fechada): O PID assume a modulação do PWM para manter a temperatura no Setpoint (ajustável de 20 a 80°C).
+3. Autotuning: Funcionalidade de sintonia automática de P, I e D com métodos selecionáveis via interface (ex: Ziegler-Nichols ou Cohen-Coon), permitindo a identificação dinâmica das constantes do processo.
+
+A transição fluida entre esses estados depende da estabilidade da comunicação de rede, garantindo que o Setpoint e os parâmetros PID sejam atualizados em tempo real no controlador.
+
+4. Conectividade e Infraestrutura de Rede
+
+A escolha do modo Access Point (AP) é estratégica para garantir que o sistema de controle seja acessível de forma autônoma, sem depender de roteadores ou infraestruturas externas de TI que possam introduzir latência ou pontos de falha.
+
+Configuração da Rede
+
+O firmware deve ser configurado de acordo com as seguintes definições de infraestrutura:
+
+* Endereço IP Estático: 192.168.4.1 (Gateway do sistema).
+* Máscara de Rede: Notação CIDR 192.168.4.0/24 (255.255.255.0).
+* SSID (Identificação): Deve ser obrigatoriamente lido e aplicado conforme definido no arquivo de manifesto do projeto (constitution.md ou constituição.md).
+
+Gerenciamento de Hosts
+
+O serviço DHCP interno do NodeMCU distribuirá endereços IP automaticamente para os dispositivos clientes (hosts) que se associarem à rede, garantindo que todos pertençam à mesma sub-rede (192.168.4.x). Esta estabilidade de rede é o que sustenta a renderização da interface web responsiva sem interrupções de socket.
+
+5. Interface Homem-Máquina (IHM) e Dashboard Web
+
+A IHM deve ser projetada para máxima eficiência operacional, utilizando um tema claro e priorizando a usabilidade em viewport única (sem rolagem vertical ou horizontal), permitindo a leitura instantânea de todos os dados críticos.
+
+Elementos Visuais e Ranges
+
+Elemento	Indicadores	Range Operacional
+Setpoint	Ajuste Numérico / Input	20 a 80 °C
+Variável de Processo (PV)	Numérico, Gauge e Gráfico	20 a 90 °C
+Variável Manipulada (MV)	Numérico, Gauge e Gráfico	0 a 100 % (PWM)
+
+Especificação de UX e Auxílio ao Usuário
+
+* Hints (Help Rápido): É obrigatório que cada elemento de controle (botões de ajuste, campos de texto, checkboxes e seletores de modo) exiba um hint explicativo indicando sua funcionalidade ao usuário.
+* Responsividade: A interface deve adaptar-se a diferentes dispositivos, mantendo a visualização de gráficos e gauges proporcional à tela.
+* Gráficos de Tendência: Devem exibir o histórico de PV e MV respeitando rigorosamente os limites de 20-90°C e 0-100%, respectivamente.
+
+6. Matriz de Requisitos para Implementação (Resumo)
+
+Esta especificação serve como guia mestre para o desenvolvimento do firmware e front-end, garantindo a conformidade técnica do sistema.
+
+Checklist de Requisitos Mandatórios
+
+* [ ] Wi-Fi em modo AP com IP estático 192.168.4.1.
+* [ ] SSID configurado via arquivo constituição.md.
+* [ ] Cálculo PID ativo com constantes P, I e D ajustáveis.
+* [ ] Checkboxes de habilitação apenas para as constantes P e D.
+* [ ] Implementação de Manual Mode com reset de Integral para evitar Windup.
+* [ ] Autotuning com seletor de método de sintonia.
+* [ ] Sistema de alarme: Ativa em 80°C, desativa abaixo de 75°C.
+* [ ] Buzzer com lógica non-blocking (150ms on / 2s off).
+* [ ] Dashboard web em tema claro, responsivo e sem rolagem (single viewport).
+* [ ] Visualização tríplice (Numérica, Gauge e Gráfico) para PV e MV.
+* [ ] Inclusão de hints de ajuda rápida em todos os elementos da interface.
+
+Considerações de Engenharia
+
+A precisão no tempo de resposta entre a interface web e o controlador no ESP8266 é crítica. O loop de controle PID deve ser executado em intervalos determinísticos (ex: 100ms a 200ms), enquanto o servidor web deve processar as atualizações de estado via WebSockets ou requisições assíncronas para garantir que a latência visual não comprometa a percepção do operador sobre a estabilidade térmica.
+
+Especificação técnica finalizada e aprovada para início imediato da codificação.
