@@ -246,6 +246,7 @@ const E={
 // Escreve no DOM apenas quando o valor muda (evita layout/paint desnecessário).
 const last={};
 function setText(key,el,val){ if(last[key]===val) return; last[key]=val; el.textContent=val; }
+function setHtml(key,el,val){ if(last[key]===val) return; last[key]=val; el.innerHTML=val; }
 function setVal(key,el,val){ if(last[key]===val) return; last[key]=val; el.value=val; }
 function setChecked(el,val){ if(el.checked===val) return; el.checked=val; }
 function setGauge(el,pct,color){
@@ -356,10 +357,10 @@ function updateUI(s){
   setGauge(E.mvG, s.mv, '#E5600C');
 
   const sens = s.sensor_fail ? '<i></i>ERRO SENSOR' : '<i></i>SENSOR';
-  setText('sensor', E.sensorBadge, sens);
+  setHtml('sensor', E.sensorBadge, sens);   // innerHTML (renderiza o <i>)
   E.sensorBadge.classList.toggle('alarm', !!s.sensor_fail);
   const alm = '<i></i>ALARME';
-  setText('alarm', E.alarmBadge, alm);
+  setHtml('alarm', E.alarmBadge, alm);
   E.alarmBadge.classList.toggle('alarm', !!s.alarm);
 
   setText('mode', E.modePill, (s.mode||'').toUpperCase());
