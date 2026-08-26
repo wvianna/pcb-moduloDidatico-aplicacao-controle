@@ -48,6 +48,19 @@ struct ParamsPID {
 };
 
 // ---------------------------------------------------------------------------
+// Saúde do MCU — informações para o cabeçalho do dashboard
+// ---------------------------------------------------------------------------
+struct HealthInfo {
+  float    cpuFreqMHz;   // frequência da CPU (MHz) — ex.: 160
+  float    busyPct;      // carga de trabalho do loop (%) — ex.: 12.5
+  float    idlePct;      // ociosidade (%) = 100 - busyPct
+  uint32_t freeHeap;     // heap livre (bytes)
+  uint16_t heapFragPct;  // fragmentação do heap (%)
+  uint32_t uptimeSec;    // tempo de execução (s)
+  uint8_t  wifiClients;  // clientes conectados ao AP
+};
+
+// ---------------------------------------------------------------------------
 // Estado completo do sistema (compartilhado entre módulos)
 // ---------------------------------------------------------------------------
 struct ControlState {
@@ -60,7 +73,8 @@ struct ControlState {
   EstadoTuning   tuning;
   EstadoAlarme   alarm;
   bool           sensor_fail;  // falha de leitura do DS18B20
-  uint32_t       ts;           // timestamp (millis) da última atualização
+  uint32_t       ts;           // timestamp (millis) da última atualização do sensor
+  HealthInfo     health;       // saúde do MCU (dashboards)
 };
 
 // ---------------------------------------------------------------------------
@@ -102,5 +116,12 @@ inline ControlState state_init() {
   s.alarm       = EstadoAlarme::NORMAL;
   s.sensor_fail = false;
   s.ts          = 0;
+  s.health.cpuFreqMHz  = 0.0f;
+  s.health.busyPct     = 0.0f;
+  s.health.idlePct     = 100.0f;
+  s.health.freeHeap    = 0;
+  s.health.heapFragPct = 0;
+  s.health.uptimeSec   = 0;
+  s.health.wifiClients = 0;
   return s;
 }

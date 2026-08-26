@@ -34,7 +34,7 @@ body{
     radial-gradient(900px 500px at 100% 110%, #f0e2cf 0%, transparent 60%),
     repeating-linear-gradient(45deg, rgba(27,27,27,.015) 0 2px, transparent 2px 6px);
 }
-.app{height:100vh; display:grid; grid-template-rows:auto 1fr; padding:18px 22px 20px; gap:16px}
+.app{height:100vh; display:grid; grid-template-rows:auto auto 1fr; padding:18px 22px 20px; gap:14px}
 /* Header */
 header{display:flex; align-items:center; gap:18px}
 .brand{display:flex; align-items:center; gap:14px}
@@ -48,6 +48,11 @@ h1{font-family:var(--disp); font-weight:800; font-size:clamp(18px,2.4vw,30px); l
 .badge.alarm i{background:var(--amber); box-shadow:0 0 0 4px var(--amber-soft)}
 .badge.alarm{color:#8a3c00; border-color:#ecc7a8}
 .mode-pill{font-family:var(--mono); font-size:12px; padding:8px 16px; border-radius:999px; background:var(--ink); color:#fff; font-weight:500}
+/* Health bar */
+.healthbar{display:flex; gap:10px; flex-wrap:wrap; align-items:center}
+.hchip{font-family:var(--mono); font-size:11px; color:var(--muted); background:var(--card); border:1px solid var(--line); border-radius:999px; padding:5px 12px; display:inline-flex; gap:6px; align-items:center}
+.hchip b{color:var(--ink); font-weight:500}
+.hchip .warn{color:var(--amber)}
 /* Main grid */
 .main{display:grid; grid-template-columns:1.15fr 1.15fr .95fr; gap:16px; min-height:0}
 .card{background:var(--card); border:1px solid var(--line); border-radius:22px; padding:18px 18px 16px; box-shadow:var(--shadow); display:flex; flex-direction:column; min-height:0; position:relative; overflow:hidden}
@@ -121,6 +126,15 @@ button.primary:hover{background:#0a5a4e}
       <span class="mode-pill" id="mode-pill" title="Modo atual do controlador: Manual, Automático ou Autotuning.">MANUAL</span>
     </div>
   </header>
+
+  <div class="healthbar">
+    <span class="hchip" title="Frequência do clock da CPU (MHz).">CPU <b id="h-cpu">--</b></span>
+    <span class="hchip" title="Carga de trabalho do loop (tempo ocupado, %).">Carga <b id="h-load">--</b></span>
+    <span class="hchip" title="Ociosidade do MCU (100% - carga).">Idle <b id="h-idle">--</b></span>
+    <span class="hchip" title="Heap (RAM) livre e fragmentação do heap.">Heap <b id="h-heap">--</b></span>
+    <span class="hchip" title="Tempo de execução desde o boot.">Uptime <b id="h-up">--</b></span>
+    <span class="hchip" title="Clientes conectados ao Access Point.">WiFi <b id="h-wifi">--</b></span>
+  </div>
 
   <div class="main">
     <section class="card pv">
@@ -208,7 +222,7 @@ button.primary:hover{background:#0a5a4e}
 </div>
 
 <script>
-const POLL_MS = 500;
+const POLL_MS = 1000;
 let pvHist=[], mvHist=[];
 const PN=20, PX=90; // PV range
 
@@ -315,6 +329,22 @@ function updateUI(s){
   mvHist.push(s.mv); if(mvHist.length>60)mvHist.shift();
   drawChart('pv-chart',pvHist,PN,PX,10,'#0F7D6B');
   drawChart('mv-chart',mvHist,0,100,10,'#E5600C');
+
+  // Saúde do MCU (cabeçalho).
+  const h=s.health||{};
+  $('h-cpu').textContent=(h.cpu!=null)?(Math.round(h.cpu)+' MHz'):'--';
+  $('h-load').textContent=(h.load!=null)?(h.load.toFixed(1)+'%'):'--';
+  $('h-idle').textContent=(h.idle!=null)?(h.idle.toFixed(1)+'%'):'--';
+  const heapKB=(h.heap!=null)?(h.heap/1024):null;
+  $('h-heap').textContent=(heapKB!=null)?(heapKB.toFixed(1)+' KB · '+Math.round(h.frag||0)+'%'):'--';
+  $('h-up').textContent=(h.up!=null)?fmtUptime(h.up):'--';
+  $('h-wifi').textContent=(h.wifi!=null)?(h.wifi+' cli'):'--';
+}
+
+function fmtUptime(sec){
+  if(sec==null)return '--';
+  const h=Math.floor(sec/3600), m=Math.floor((sec%3600)/60), s2=Math.floor(sec%60);
+  return h>0? (h+'h '+m+'m') : (m>0? (m+'m '+s2+'s') : (s2+'s'));
 }
 
 $('sp').addEventListener('change',()=>postControl({setpoint:parseFloat($('sp').value)}));

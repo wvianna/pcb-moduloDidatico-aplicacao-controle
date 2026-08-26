@@ -11,8 +11,8 @@ class TempSensor {
 public:
   void begin();                 // inicializa barramento e resolução
   void tick();                  // chame a cada loop(); gerencia a conversão
-  float getPV() const { return filtered_; }   // temperatura filtrada (°C)
-  bool  isFault() const { return fault_; }     // falha de leitura
+  float getPV() const { return latest_; }   // leitura bruta (°C) — sem média
+  bool  isFault() const { return fault_; }     // falha de leitura (após falhas consecutivas)
   bool  readReady() const { return newSample_; }  // nova amostra neste ciclo
   void  clearReady() { newSample_ = false; }
 
@@ -20,14 +20,11 @@ private:
   enum class Phase { IDLE, CONVERTING };
 
   void startConversion();
-  void pushSample(float t);
-  float average() const;
 
   Phase    phase_;
   uint32_t convertStartMs_;
-  float    filtered_;
+  float    latest_;      // última leitura válida (bruta)
+  uint8_t  failCount_;  // falhas consecutivas
   bool     fault_;
   bool     newSample_;
-  float    buffer_[SENSOR_FILTER_N];  // média móvel — sem alocação dinâmica
-  uint8_t  idx_;
 };

@@ -15,9 +15,11 @@
 // ---------------------------------------------------------------------------
 // Sensor de temperatura (DS18B20)
 // ---------------------------------------------------------------------------
-#define SENSOR_CONVERSION_MS   750  // tempo de conversão típico em 12 bits
+#define SENSOR_CONVERSION_MS   800  // tempo mínimo de conversão do DS18B20 (12 bits ~750 ms + margem)
 #define SENSOR_RESOLUTION_BITS 12   // resolução do DS18B20
 #define SENSOR_FILTER_N        5    // amostras da média móvel (filtro da PV)
+#define SENSOR_TIMEOUT_MS      3000 // falha de segurança se nenhuma amostra chegar em 3 s
+#define SENSOR_FAIL_THRESHOLD  3    // nº de falhas consecutivas para marcar erro de sensor
 
 // Faixas operacionais
 #define PV_MIN_C      20.0f   // limite inferior de exibição da PV
