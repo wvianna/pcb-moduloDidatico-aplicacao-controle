@@ -243,13 +243,13 @@ function drawChart(id,data,lo,hi,step,color){
   const pw=w-left-right, ph=h-top-bottom;
   if(pw<=0||ph<=0) return;
 
-  ctx.lineWidth=1*dpr; ctx.font=(9*dpr)+'px "IBM Plex Mono", monospace';
+  ctx.lineWidth=1.5*dpr; ctx.font=(9*dpr)+'px "IBM Plex Mono", monospace';
 
   // Grade horizontal (leituras) em passos de `step` — cinza claro.
   ctx.textAlign='right'; ctx.textBaseline='middle';
   for(let v=lo; v<=hi+0.001; v+=step){
-    const y=top+(1-(v-lo)/(hi-lo))*ph;
-    ctx.strokeStyle='rgba(150,150,150,.3)';
+    const y=Math.round(top+(1-(v-lo)/(hi-lo))*ph);
+    ctx.strokeStyle='rgba(115,115,115,.55)';
     ctx.beginPath(); ctx.moveTo(left,y); ctx.lineTo(left+pw,y); ctx.stroke();
     ctx.fillStyle='rgba(27,27,27,.55)';
     ctx.fillText(((Math.round(v*10)/10)).toFixed((hi-lo)<20?1:0), left-5, y);
@@ -260,8 +260,8 @@ function drawChart(id,data,lo,hi,step,color){
   const spanSec=(data.length>1)?((data.length-1)*(POLL_MS/1000)):30;
   ctx.textAlign='center'; ctx.textBaseline='top';
   for(let i=0;i<=tcount;i++){
-    const x=left+(i/tcount)*pw;
-    ctx.strokeStyle='rgba(150,150,150,.22)';
+    const x=Math.round(left+(i/tcount)*pw);
+    ctx.strokeStyle='rgba(115,115,115,.45)';
     ctx.beginPath(); ctx.moveTo(x,top); ctx.lineTo(x,top+ph); ctx.stroke();
     const secs=Math.round(spanSec*(1-i/tcount));
     ctx.fillStyle='rgba(27,27,27,.5)';

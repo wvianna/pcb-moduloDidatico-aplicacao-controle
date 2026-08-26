@@ -115,7 +115,9 @@ void WebServer::begin(ControlState* cs) {
 
   WiFi.mode(WIFI_AP);
   WiFi.softAPConfig(ip, gw, mask);       // IP estático + DHCP na sub-rede
-  WiFi.softAP(ssid_);
+  // Acesso multicliente: múltiplos clientes podem se associar ao AP
+  // (AP_MAX_CONNECTIONS) e o ESP8266WebServer atende conexões concorrentes.
+  WiFi.softAP(ssid_, NULL, AP_SOFTAP_CHANNEL, 0, AP_MAX_CONNECTIONS);
 
   server.on("/", HTTP_GET, handleRoot);
   server.on("/api/state", HTTP_GET, handleState);

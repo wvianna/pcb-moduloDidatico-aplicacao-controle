@@ -13,7 +13,7 @@ Firmware + dashboard web embarcado para um **sistema de controle de temperatura*
 - **Controle:** PID **custom** com anti-windup (P e D habilitáveis; I sempre ativo).
 - **Modos:** `MANUAL` (malha aberta), `AUTO` (malha fechada) e `TUNING` (autotuning por **relé** ou **degrau**).
 - **Alarme:** ativa em **≥ 80 °C** e cessa em **< 78 °C** (histerese de 2 °C); corta a resistência e bipa **150 ms a cada 2 s** sem bloquear o loop.
-- **Rede:** modo **AP** sem encriptação, IP **192.168.4.1**, máscara `/24`, DHCP na sub-rede, SSID derivado do chip ID (ex. `ESP8266-XXXXXX`).
+- **Rede:** modo **AP** sem encriptação, IP **192.168.4.1**, máscara `/24`, DHCP na sub-rede, SSID derivado do chip ID (ex. `ESP8266-XXXXXX`), aceita **até 4 clientes simultâneos (multicliente)**; o servidor HTTP atende **requisições concorrentes** em múltiplos clientes.
 - **IHM:** tema claro, **viewport única** (sem rolagem), visualização **tríplice** (numérico, gauge e gráfico) de **PV** e **MV**, com *hints* em todos os controles e **polling** `fetch` a cada 500 ms.
 
 ## 2. Arquitetura
@@ -130,11 +130,12 @@ sequenceDiagram
     participant SENS as sensor
     participant CTRL as control
     participant BZ as buzzer
+    participant H as PWM D1
     LOOP->>WEB: web.handle() (não-bloqueante)
     LOOP->>SENS: sensor.tick() (conversão assíncrona ~1 Hz)
     SENS-->>LOOP: nova amostra PV (se pronta)
     LOOP->>CTRL: ctrl.tick() (alarme + PID/autotune + atuadores)
-    CTRL-->>H[PWM D1]: MV 0–100 %
+    CTRL-->>H: MV 0-100 %
     CTRL-->>BZ: setAlarm(on/off)
     LOOP->>BZ: buzzer.tick() (150 ms / 2 s)
 ```
