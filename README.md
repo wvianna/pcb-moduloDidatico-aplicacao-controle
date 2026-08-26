@@ -160,6 +160,12 @@ Em **ALARME**, a resistência é desligada e o buzzer bipa **150 ms a cada 2 s**
 2. Abra `http://192.168.4.1` no navegador.
 3. Ajuste setpoint (20–80 °C), modo (Manual/Automático), MV manual, parâmetros PID e autotuning.
 
+### Captura de tela (dashboard)
+
+![Screenshot do dashboard](imagens/screenshot1.png)
+
+> Tema claro industrial, **viewport única**, visualização **tríplice** (numérico + gauge + gráfico) de **PV** e **MV**, escala de 10 em 10, grade com divisões de tempo, *hints* em todos os controles e *polling* a cada 500 ms.
+
 ## 10. API (endpoints)
 
 | Método | Rota | Descrição |
