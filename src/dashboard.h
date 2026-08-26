@@ -132,6 +132,8 @@ button.primary:hover{background:#0a5a4e}
     <span class="hchip" title="Carga de trabalho do loop (tempo ocupado, %).">Carga <b id="h-load">--</b></span>
     <span class="hchip" title="Ociosidade do MCU (100% - carga).">Idle <b id="h-idle">--</b></span>
     <span class="hchip" title="Heap (RAM) livre e fragmentação do heap.">Heap <b id="h-heap">--</b></span>
+    <span class="hchip" title="Bloco contíguo de heap livre (máximo bloco).">Bloco <b id="h-mblock">--</b></span>
+    <span class="hchip" title="Flash total e tamanho do firmware (sketch).">Flash <b id="h-flash">--</b></span>
     <span class="hchip" title="Tempo de execução desde o boot.">Uptime <b id="h-up">--</b></span>
     <span class="hchip" title="Clientes conectados ao Access Point.">WiFi <b id="h-wifi">--</b></span>
   </div>
@@ -324,7 +326,9 @@ function updateUI(s){
   $('btn-auto').classList.toggle('active',s.mode==='auto');
   $('slider').value=s.mv; $('slider-val').textContent=Math.round(s.mv)+'%';
   $('kp').value=s.pid.p; $('ki').value=s.pid.i; $('kd').value=s.pid.d;
-  $('enP').checked=s.pid.enableP; $('enD').checked=s.pid.enableD;
+  // Não sobrescreve os checkboxes enquanto o usuário está interagindo com eles.
+  if(document.activeElement!==$('enP')) $('enP').checked=s.pid.enableP;
+  if(document.activeElement!==$('enD')) $('enD').checked=s.pid.enableD;
   pvHist.push(s.pv); if(pvHist.length>60)pvHist.shift();
   mvHist.push(s.mv); if(mvHist.length>60)mvHist.shift();
   drawChart('pv-chart',pvHist,PN,PX,10,'#0F7D6B');
@@ -337,6 +341,8 @@ function updateUI(s){
   $('h-idle').textContent=(h.idle!=null)?(h.idle.toFixed(1)+'%'):'--';
   const heapKB=(h.heap!=null)?(h.heap/1024):null;
   $('h-heap').textContent=(heapKB!=null)?(heapKB.toFixed(1)+' KB · '+Math.round(h.frag||0)+'%'):'--';
+  $('h-mblock').textContent=(h.mblock!=null)?((h.mblock/1024).toFixed(1)+' KB'):'--';
+  $('h-flash').textContent=(h.flash!=null)?(h.sketch.toFixed(0)+' KB / '+h.flash.toFixed(1)+' MB'):'--';
   $('h-up').textContent=(h.up!=null)?fmtUptime(h.up):'--';
   $('h-wifi').textContent=(h.wifi!=null)?(h.wifi+' cli'):'--';
 }

@@ -153,7 +153,7 @@
 ### Arquivos de código esperados
 - `src/main.cpp`, `src/config.h`, `src/state.h`, `src/sensors.h/.cpp`, `src/actuators.h/.cpp`, `src/pid.h/.cpp`, `src/autotune.h/.cpp`, `src/control.h/.cpp`, `src/web_server.h/.cpp`, `src/dashboard.h`.
 - `platformio.ini` (lib_deps + portas).
-- `test/` (HOST): unitários de PID, alarme, filtro e autotune.
+- `test/host/test_core.cpp` (HOST): unitários de PID, alarme, sintonia e flags P/D (**31/31**).
 - `README.md` atualizado.
 
 ### Comando de compilação
@@ -195,3 +195,22 @@ pio device monitor -p /dev/ttyUSB0
 - **Margem de RAM/stack** (`NFR-006`, `NFR-008`) — medir heap/stack no BANCADA pós-integração.
 - **Autotuning por relé** — validar amplitude/tempo para não exceder o estado seguro.
 - **Responsável pela validação física:** operador com acesso ao `/dev/ttyUSB0`.
+
+---
+
+## Ajustes incrementais pós-entrega (D-001..D-010)
+
+> Executados após a T-014, conforme decisões do operador. Ver `context.md`.
+
+| ID | Ajuste | Onde | Evidência |
+|---|---|---|---|
+| D-001 | Leitura **bruta** (sem média móvel) | `sensors.h/.cpp` | BANCADA (leitura direta) |
+| D-002 | Erro de sensor só após 3 falhas consecutivas | `sensors`, `config.h` | BANCADA |
+| D-003 | **Fail-safe**: corta a resistência se a leitura congelar 3 s | `control.cpp` | HOST + BANCADA |
+| D-004 | Conversão OneWire de **800 ms** | `config.h` | BANCADA |
+| D-005 | Polling do dashboard em **1 s** | `dashboard.h` | BANCADA (navegador) |
+| D-006 | **Multicliente** (AP até 4 clientes) | `web_server.cpp` | BANCADA (2+ clientes) |
+| D-007 | **Clock 160 MHz** | `platformio.ini` | Build + boot `CPU=160 MHz` |
+| D-008 | **Saúde do MCU** no cabeçalho | `main.cpp`, `state.h`, `dashboard.h` | BANCADA (navegador) |
+| D-009 | `/api/state` em **buffer estático** | `web_server.cpp` | HOST (JSON válido) + BANCADA |
+| D-010 | Controles **P/D** verificados (**I** sempre ativa) | `pid`, `dashboard.h` | HOST (31/31) + serial `[CTRL]` |

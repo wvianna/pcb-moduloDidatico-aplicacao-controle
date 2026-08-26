@@ -4,7 +4,7 @@
 > **Escopo (SDD):** Grande — múltiplos módulos (aquisição, PID, alarme, rede/AP, servidor web e IHM), máquina de estados e integração de hardware.
 > **Alvo:** NodeMCU V2 (ESP12E / ESP8266MOD), Arduino Core para ESP8266 >= 3.0.0, PlatformIO.
 > **Origem da intenção:** `docs/descritivo.txt` + `.specs/project/constitution.md`.
-> **Status:** Especificação de comportamento (pré-design). Produto de saída: `design.md` e `tasks.md` para execução.
+> **Status:** Especificação **implementada** (T-001..T-014). Atualizada com decisões incrementais: leitura bruta (sem média), fail-safe de sensor (3 s), polling de 1 s, multicliente (até 4), clock 160 MHz e saúde do MCU no cabeçalho.
 
 ---
 
@@ -88,17 +88,17 @@ Cada requisito `FR-###` é observável e testável. Interfaces de hardware e com
 
 - **FR-001** — O firmware deve iniciar o ESP8266 em modo **Access Point** (AP) com SSID obtido do arquivo de constituição.
 - **FR-002** — O AP deve configurar IP estático `192.168.4.1`, gateway `192.168.4.1` e máscara `255.255.255.0`.
-- **FR-003** — O AP deve habilitar DHCP para a sub-rede `192.168.4.0/24`, distribuindo IPs `192.168.4.x` aos clientes.
+- **FR-003** — O AP deve habilitar DHCP para a sub-rede `192.168.4.0/24`, distribuindo IPs `192.168.4.x` aos clientes e aceitando **até `AP_MAX_CONNECTIONS` (4) clientes simultâneos (multicliente)**; o servidor HTTP atende requisições concorrentes.
 - **FR-004** — O servidor HTTP deve servir o dashboard web em `http://192.168.4.1` (rota `/`).
-- **FR-005** — O servidor HTTP deve expor um endpoint JSON (ex.: `GET /api/state`) com: temperatura (PV °C), potência (MV %), modo, setpoint, estado de alarme e estado de falha do sensor. O contrato exato (campos, tipos, erro) é detalhado no `design.md`. **A CONFIRMAR** o formato do contrato.
+- **FR-005** — O servidor HTTP deve expor um endpoint JSON (`GET /api/state`) com: PV (°C), MV (%), setpoint, modo, alarme, falha do sensor e **saúde do MCU** (CPU, carga, idle, heap, flash, uptime, clientes Wi-Fi). O contrato (campos/tipos) é definido no `design.md` §8.2 e gerado em **buffer estático** (`snprintf`), sem alocação dinâmica (cumpre `NFR-007`).
 - **FR-006** — Requisições HTTP inválidas (rota desconhecida, método não suportado, corpo malformado) devem retornar resposta de erro sem travar o servidor nem o loop de controle.
 
 ### 5.2 Aquisição e atuação
 
 - **FR-007** — O sistema deve ler a temperatura do sensor DS18B20 a cada segundo (1 Hz), convertendo para graus Celsius.
 - **FR-008** — A saída PWM da resistência deve ter resolução de **10 bits (0–1023)**, mapeada internamente para a escala de **0–100 %** exibida ao operador.
-- **FR-009** — O valor de leitura deve passar por filtragem antes do cálculo derivativo do PID, reduzindo ruído sem atraso perceptível (`NFR-###` de filtro em design).
-- **FR-010** — Em falha de leitura do DS18B20 (sensor desconectado, CRC inválido, timeout), o sistema deve: (a) marcar `SENSOR_FAIL`, (b) suspender a atuação da resistência (estado seguro), (c) exibir falha no dashboard, e (d) continuar respondendo às requisições web.
+- **FR-009** — O valor de leitura é apresentado **bruto** (sem média móvel) e usado diretamente no PID e no dashboard — decisão do operador (filtragem por média removida).
+- **FR-010** — Em falha de leitura do DS18B20 (sensor desconectado, CRC inválido, timeout), o sistema deve: (a) marcar `SENSOR_FAIL`, (b) suspender a atuação da resistência (estado seguro), (c) exibir falha no dashboard, e (d) continuar respondendo às requisições web. O erro só é marcado após `SENSOR_FAIL_THRESHOLD` (3) falhas consecutivas, evitando falso alarme.
 
 ### 5.3 Máquina de alarme
 
@@ -133,8 +133,10 @@ Cada requisito `FR-###` é observável e testável. Interfaces de hardware e com
 - **FR-028** — O **Setpoint** deve ser exibido/ajustado como valor numérico/input de **20 a 80 °C**.
 - **FR-029** — Os **gráficos de tendência** devem respeitar rigorosamente os limites: PV **20–90 °C** e MV **0–100 %**.
 - **FR-030** — Cada elemento de controle (botões, campos, checkboxes, seletores de modo, slider) deve exibir um **hint** explicativo de sua funcionalidade.
-- **FR-031** — O dashboard deve se **atualizar em tempo real** via **polling assíncrono** (requisições `fetch` periódicas a cada ~500 ms–1 s), sem bloquear o loop principal. *(Decisão Q-004)*
+- **FR-031** — O dashboard deve se **atualizar em tempo real** via **polling assíncrono** (requisições `fetch` a cada **1 s**, alinhado à aquisição do sensor), sem bloquear o loop principal. *(Decisão Q-004; atualizado p/ 1 s)*
 - **FR-032** — A interface deve ser **responsiva**, adaptando-se a diferentes dispositivos com visualização de gráficos/gauges proporcional à tela.
+- **FR-033** — **Fail-safe do sensor:** se nenhuma amostra de temperatura chegar em `SENSOR_TIMEOUT_MS` (3 s), o sistema deve **desligar a resistência**, marcar `SENSOR_FAIL` e exibir erro no dashboard (proteção contra leitura congelada/superaquecimento).
+- **FR-034** — O cabeçalho do dashboard deve exibir **saúde do MCU**: frequência da CPU (MHz), carga e idle (%), heap livre + fragmentação, maior bloco livre, flash total/sketch, uptime e clientes Wi-Fi.
 
 ## 6. Requisitos não funcionais
 
@@ -151,7 +153,7 @@ Cada `NFR-###` deve ter métrica, condição e método de medição.
 
 - **NFR-005** — O binário deve caber em **4 MB de flash**, com margem mínima de **10 %**. Medição: relatório de tamanho do build (`pio run`).
 - **NFR-006** — O uso de **RAM** deve ser medido/estimado para loop, servidor web e tasks; margem mínima `A CONFIRMAR` (constituição).
-- **NFR-007** — **Alocação dinâmica** (malloc/new/String) deve ser **evitada** no caminho periódico de aquisição/PID e no atendimento de requisições; buffers devem ser pré-alocados. **A CONFIRMAR** política exata.
+- **NFR-007** — **Alocação dinâmica** (malloc/new/String) deve ser **evitada** no caminho periódico de aquisição/PID e no atendimento de requisições; buffers devem ser pré-alocados. **Resolvido:** `/api/state` gera o JSON em **buffer estático** (`snprintf`).
 - **NFR-008** — O **stack** deve ser medido/estimado para o loop e as tasks; critério `A CONFIRMAR` (constituição).
 
 ### 6.3 Concorrência e robustez
@@ -180,7 +182,10 @@ Cada `NFR-###` deve ter métrica, condição e método de medição.
 - **NFR-019** — **Fundo e detalhes:** criar **atmosfera e profundidade** (gradientes suaves, texturas/ruído, padrões geométricos, sombras dramáticas, bordas decorativas) em vez de cor sólida simples, mantendo legibilidade.
 - **NFR-020** — **Acessibilidade/legibilidade:** contraste adequado WCAG AA para texto e elementos de controle; *hints* legíveis; foco visível via teclado.
 - **NFR-021** — **Sem estética genérica de IA:** proibido reutilizar combinações clichês (Inter/Space Grotesk, gradientes roxos, padrões previsíveis). Cada geração deve ter direção estética própria.
-- **NFR-022** — **Desempenho visual:** o dashboard deve manter fluidez (sem *scroll* e com animações a 60 fps) mesmo com **atualização a cada 500 ms–1 s** de PV/MV.
+- **NFR-022** — **Desempenho visual:** o dashboard deve manter fluidez (sem *scroll* e com animações a 60 fps) mesmo com **atualização a cada 1 s** de PV/MV.
+- **NFR-023** — **Fail-safe de sensor:** se `millis() - ts_sensor > SENSOR_TIMEOUT_MS` (3 s), cortar a resistência. Medição: simular leitura congelada e observar MV=0.
+- **NFR-024** — As métricas de **saúde do MCU** devem ser atualizadas a cada **1 s** e refletidas no `/api/state` e no cabeçalho.
+- **NFR-025** — O ESP8266 deve operar a **160 MHz** (`board_build.f_cpu = 160000000L`), com carga/ociosidade do loop medidas e exibidas.
 
 ## 7. Critérios de aceitação
 
@@ -220,6 +225,8 @@ Formato `DADO / QUANDO / ENTÃO`. Cada critério é rastreável a um ou mais req
 - **CA-018** — DADO cada controle da interface, QUANDO o operador passa o mouse/foca, ENTÃO um **hint** explica sua funcionalidade. *(FR-030)*
 - **CA-019** — DADO o dashboard em diferentes dispositivos, QUANDO a tela muda de tamanho, ENTÃO gráficos e gauges se adaptam proporcionalmente. *(FR-032)*
 - **CA-020** — DADO o dashboard, QUANDO inspecionado visualmente, ENTÃO usa tipografia distinta, tema coeso via CSS variables, micro-interações/fundo com profundidade e não apresenta estética genérica de IA. *(NFR-015 a NFR-022)*
+- **CA-021** — DADO o sensor com leitura congelada por mais de 3 s, QUANDO o loop avalia o estado, ENTÃO a resistência é desligada e o dashboard indica erro de sensor. *(FR-033, NFR-023)*
+- **CA-022** — DADO o dashboard, QUANDO o cabeçalho é inspecionado, ENTÃO exibe CPU, carga, idle, heap, flash, uptime e clientes Wi-Fi atualizados a cada 1 s. *(FR-034, NFR-024)*
 
 ## 8. Matriz de rastreabilidade (requisito → critério → evidência)
 
@@ -238,6 +245,9 @@ Formato `DADO / QUANDO / ENTÃO`. Cada critério é rastreável a um ou mais req
 | NFR-005, NFR-006 | — | Build (tamanho/RAM) |
 | NFR-007–NFR-010 | — | Revisão estática + medição stack |
 | NFR-011–NFR-014 | CA-008, CA-010 | BANCADA (falha/reset/brownout) |
+| FR-033, NFR-023 | CA-021 | BANCADA (leitura congelada) |
+| FR-034, NFR-024 | CA-022 | BANCADA (navegador) + inspeção |
+| NFR-025 | — | Build (160 MHz) |
 
 ## 9. Premissas, riscos e perguntas bloqueadoras
 
@@ -268,12 +278,13 @@ Formato `DADO / QUANDO / ENTÃO`. Cada critério é rastreável a um ou mais req
 
 > As decisões foram registradas em `context.md` e refletidas nos requisitos e critérios de aceite. Decisões que permanecerem em aberto não devem ser fabricadas — devem virar item de design/`tasks.md` ou bloqueio explícito.
 
-## 10. Entregáveis esperados (próximos artefatos)
+## 10. Entregáveis e estado da implementação
 
-Conforme o escopo **Grande**, após a especificação:
+Escopo **Grande** — implementação **concluída** (T-001..T-014):
 
-1. `design.md` — arquitetura de módulos, máquina de estados, ownership/buffers, contexto de execução (loop/task/ISR), orçamento de tempo/memória, contrato do endpoint JSON, estratégia de anti-windup e direção estética do dashboard.
-2. `tasks.md` — tarefas atômicas ordenadas por risco, com `Requisitos`, `Onde`, `Depende de`, `Feito quando`, `Testes` e `Gate`.
-3. Implementação com verificação: build (`pio run`), testes HOST/SIMULADOR e validação BANCADA.
-4. Atualização de `README.md` (instalação/configuração/compilação/teste/execução).
-5. `STATE.md` / `HANDSOFF.md` para continuidade.
+1. `design.md` — arquitetura de módulos, máquina de estados, ownership/buffers, contexto de execução, orçamento de tempo/memória, contrato do endpoint JSON, anti-windup, direção estética e saúde do MCU.
+2. `tasks.md` — tarefas atômicas ordenadas por risco, todas executadas e verificadas.
+3. Implementação com verificação: **build OK** (`pio run`), **31/31 testes HOST** (PID, alarme, sintonia e flags P/D), **upload** em `/dev/ttyUSB0` e validação **BANCADA parcial** (sensor OK, loop, controles P/D).
+4. `README.md` atualizado (configuração, compilação, gravação, execução, API, testes, diagramas mermaid e screenshot do dashboard).
+5. `STATE.md` / `HANDSOFF.md` atualizados com decisões e validações pendentes (rede/dashboard multicliente e alarme a 80 °C).
+

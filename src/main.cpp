@@ -58,10 +58,11 @@ void loop() {
   static uint32_t lastStatusMs = 0;
   if ((uint32_t)(millis() - lastStatusMs) >= 2000) {
     lastStatusMs = millis();
-    Serial.printf("[STATUS] PV=%.1f MV=%.1f SP=%.1f modo=%s alarm=%s sensor=%s\n",
+    Serial.printf("[STATUS] PV=%.1f MV=%.1f SP=%.1f modo=%s alarm=%s sensor=%s enP=%d enD=%d\n",
                   cs.pv, cs.mv, cs.setpoint, modoToString(cs.modo),
                   (cs.alarm == EstadoAlarme::ALARME) ? "ON" : "OFF",
-                  cs.sensor_fail ? "FAIL" : "OK");
+                  cs.sensor_fail ? "FAIL" : "OK",
+                  cs.pid.enableP ? 1 : 0, cs.pid.enableD ? 1 : 0);
   }
 
   busyMicros += (uint32_t)(micros() - t0);   // acumula o tempo de trabalho
@@ -78,7 +79,10 @@ void loop() {
     cs.health.cpuFreqMHz  = (float)ESP.getCpuFreqMHz();
     cs.health.busyPct     = busy;
     cs.health.idlePct     = 100.0f - busy;
+    cs.health.flashMB     = (float)ESP.getFlashChipSize() / 1048576.0f;
+    cs.health.sketchKB    = (float)ESP.getSketchSize() / 1024.0f;
     cs.health.freeHeap    = ESP.getFreeHeap();
+    cs.health.maxFreeBlock = ESP.getMaxFreeBlockSize();
     cs.health.heapFragPct = (uint16_t)ESP.getHeapFragmentation();
     cs.health.uptimeSec   = nowMs / 1000UL;
     cs.health.wifiClients = WiFi.softAPgetStationNum();

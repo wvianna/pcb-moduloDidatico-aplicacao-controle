@@ -21,13 +21,13 @@ static void handleRoot() {
 static void handleState() {
   // JSON em buffer estático (snprintf) — sem alocação dinâmica no caminho de
   // polling (NFR-007). Evita fragmentação de heap no ESP8266, causa de travamento.
-  static char buf[320];
+  static char buf[384];
   snprintf(buf, sizeof(buf),
     "{\"pv\":%.2f,\"mv\":%.1f,\"setpoint\":%.1f,\"mode\":\"%s\",\"alarm\":%s,"
     "\"sensor_fail\":%s,\"ts\":%lu,"
     "\"pid\":{\"p\":%.3f,\"i\":%.3f,\"d\":%.3f,\"enableP\":%s,\"enableD\":%s},"
-    "\"health\":{\"cpu\":%.0f,\"load\":%.1f,\"idle\":%.1f,\"heap\":%lu,\"frag\":%u,"
-    "\"up\":%lu,\"wifi\":%u}}",
+    "\"health\":{\"cpu\":%.0f,\"load\":%.1f,\"idle\":%.1f,\"flash\":%.1f,\"sketch\":%.1f,"
+    "\"heap\":%lu,\"mblock\":%lu,\"frag\":%u,\"up\":%lu,\"wifi\":%u}}",
     g_cs->pv, g_cs->mv, g_cs->setpoint, modoToString(g_cs->modo),
     (g_cs->alarm == EstadoAlarme::ALARME) ? "true" : "false",
     g_cs->sensor_fail ? "true" : "false",
@@ -38,7 +38,10 @@ static void handleState() {
     (double)g_cs->health.cpuFreqMHz,
     (double)g_cs->health.busyPct,
     (double)g_cs->health.idlePct,
+    (double)g_cs->health.flashMB,
+    (double)g_cs->health.sketchKB,
     (unsigned long)g_cs->health.freeHeap,
+    (unsigned long)g_cs->health.maxFreeBlock,
     (unsigned int)g_cs->health.heapFragPct,
     (unsigned long)g_cs->health.uptimeSec,
     (unsigned int)g_cs->health.wifiClients);
@@ -87,6 +90,9 @@ static void handleControl() {
     if (pj.containsKey("d")) g_cs->pid.kd = pj["d"] | g_cs->pid.kd;
     if (pj.containsKey("enableP")) g_cs->pid.enableP = pj["enableP"] | g_cs->pid.enableP;
     if (pj.containsKey("enableD")) g_cs->pid.enableD = pj["enableD"] | g_cs->pid.enableD;
+    Serial.printf("[CTRL] pid p=%.3f i=%.3f d=%.3f enP=%d enD=%d\n",
+                  g_cs->pid.kp, g_cs->pid.ki, g_cs->pid.kd,
+                  g_cs->pid.enableP ? 1 : 0, g_cs->pid.enableD ? 1 : 0);
   }
 
   // Autotuning: seleciona método e inicia (T-012).

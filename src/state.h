@@ -54,7 +54,10 @@ struct HealthInfo {
   float    cpuFreqMHz;   // frequência da CPU (MHz) — ex.: 160
   float    busyPct;      // carga de trabalho do loop (%) — ex.: 12.5
   float    idlePct;      // ociosidade (%) = 100 - busyPct
+  float    flashMB;      // flash total (MB)
+  float    sketchKB;     // tamanho do firmware (KB)
   uint32_t freeHeap;     // heap livre (bytes)
+  uint32_t maxFreeBlock; // maior bloco contíguo livre (bytes)
   uint16_t heapFragPct;  // fragmentação do heap (%)
   uint32_t uptimeSec;    // tempo de execução (s)
   uint8_t  wifiClients;  // clientes conectados ao AP
@@ -119,7 +122,10 @@ inline ControlState state_init() {
   s.health.cpuFreqMHz  = 0.0f;
   s.health.busyPct     = 0.0f;
   s.health.idlePct     = 100.0f;
+  s.health.flashMB     = 0.0f;
+  s.health.sketchKB    = 0.0f;
   s.health.freeHeap    = 0;
+  s.health.maxFreeBlock = 0;
   s.health.heapFragPct = 0;
   s.health.uptimeSec   = 0;
   s.health.wifiClients = 0;

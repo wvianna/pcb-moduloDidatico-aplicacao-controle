@@ -3,7 +3,7 @@
 > **Feature:** `controle-termico` · Escopo **Grande**.
 > **Fonte de contrato:** `.specs/features/controle-termico/spec.md` (requisitos `FR-###`/`NFR-###`) e `context.md` (decisões `Q-001`–`Q-006`).
 > **Alvo:** NodeMCU V2 (ESP12E), Arduino Core ESP8266 ≥ 3.0.0, PlatformIO.
-> **Decisões aplicadas:** PID custom (Q-002), autotuning relé+degrau (Q-003), polling fetch (Q-004), SSID por MAC (Q-005), BANCADA em `/dev/ttyUSB0` (Q-006).
+> **Decisões aplicadas:** PID custom (Q-002), autotuning relé+degrau (Q-003), polling fetch a **1 s** (Q-004/D-005), SSID por MAC (Q-005), BANCADA em `/dev/ttyUSB0` (Q-006). Incrementais (D-001..D-010): leitura **bruta**, fail-safe de sensor (3 s), multicliente (4), **clock 160 MHz** e saúde do MCU no cabeçalho — ver `context.md`.
 
 ---
 
@@ -15,7 +15,7 @@ O firmware usa **um único loop cooperativo** (`loop()` do Arduino), sem RTOS de
 flowchart TD
     subgraph "Main loop (cooperative, millis())"
         A[handleClient<br/>HTTP não-bloqueante] --> B[Aquisição DS18B20<br/>FSM 1 Hz]
-        B --> C[Filtro PV]
+        B --> C[Leitura bruta PV]
         C --> D[Alarme<br/>FSM histerese]
         D --> E[Buzzer<br/>FSM 150ms/2s]
         E --> F[Supervisor de controle<br/>PID 100–200ms]
@@ -34,7 +34,7 @@ flowchart TD
 |---|---|---|
 | `config.h` | Constantes: pinos, limiares de alarme, limites PID, rede. | — |
 | `state.h` | Modelo de dados compartilhado (`ControlState`). | — |
-| `sensors` | Leitura não-bloqueante do DS18B20 + filtro. | FR-007, FR-009, FR-010, NFR-002, NFR-014 |
+| `sensors` | Leitura não-bloqueante do DS18B20 (**bruta**, sem média) + fail-safe. | FR-007, FR-009, FR-010, FR-033, NFR-002, NFR-014, NFR-023 |
 | `actuators` | PWM da resistência (0–100%) + buzzer não-bloqueante. | FR-008, FR-012, FR-013, FR-015 |
 | `pid` | Controlador PID custom com anti-windup. | FR-016–FR-021 |
 | `autotune` | Sintonia por relé e por resposta em degrau. | FR-024 |
@@ -49,7 +49,7 @@ src/
 ├── main.cpp          # setup() + loop() (orquestra todos os módulos)
 ├── config.h          # pinos, limites, constantes de rede e alarme
 ├── state.h           # struct ControlState + enum Modo/EstadoAlarme
-├── sensors.h/.cpp    # DS18B20 não-bloqueante + filtro
+├── sensors.h/.cpp    # DS18B20 não-bloqueante (leitura bruta) + contagem de falhas
 ├── actuators.h/.cpp  # PWM heater + buzzer
 ├── pid.h/.cpp        # PID custom
 ├── autotune.h/.cpp   # relé + resposta em degrau
@@ -120,10 +120,10 @@ FSM baseada em `millis()`: `OFF→ON (150ms)→OFF (2000ms)→...`. Nenhum `dela
 O DS18B20 em 12 bits demanda ~750 ms de conversão. Para **não** bloquear PID/HTTP, a leitura é dividida:
 
 1. `sensor.requestTemperatures()` inicia conversão (retorna de imediato);
-2. registro `sensor_start_ms`;
-3. a cada ciclo, se `millis() - sensor_start_ms >= CONVERSION_TIME`, lê o valor e atualiza `pv`.
+2. registro `convertStartMs_`;
+3. após `SENSOR_CONVERSION_MS` (800 ms) lê o valor **bruto** e atualiza `pv` (sem média móvel — Decisão D-001).
 
-Assim a aquisição ocorre a ~1 Hz (`NFR-002`) sem bloquear o loop. (*Alternativa:* resolução de 9 bits, ~94 ms, se a resposta do processo for lenta — decisão reservada ao teste de BANCADA.)
+A leitura é validada; uma falha incrementa `failCount_` e o erro (`SENSOR_FAIL`) só é marcado após `SENSOR_FAIL_THRESHOLD` (3) falhas consecutivas (Decisão D-002). O **fail-safe** no supervisor desliga a resistência se nenhuma amostra chegar em `SENSOR_TIMEOUT_MS` (3 s) (Decisão D-003 / `FR-033`). Aquisição a ~1 Hz (`NFR-002`) sem bloquear o loop.
 
 ## 5. Contexto de execução e orçamento de tempo
 
@@ -133,8 +133,9 @@ Todo o trabalho ocorre no `loop()`. Ordem sugerida e orçamento:
 |---|---|---|---|
 | `handleClient()` | contínuo | ~1–5 ms | não-bloqueante |
 | Aquisição DS18B20 | 1 Hz | ~0 ms (assíncrono) | período 1 s, jitter ±100 ms |
-| Filtro PV | 1 Hz | <0.1 ms | — |
-| Alarme + Buzzer | contínuo | <0.1 ms | ±20 ms (buzzer) |
+| Leitura bruta PV | 1 Hz | <0.1 ms | — |
+| Alarme + Buzzer + fail-safe | contínuo | <0.1 ms | ±20 ms (buzzer); 3 s (fail-safe) |
+| Saúde do MCU | 1 s | <0.1 ms | métricas no `/api/state` |
 | **Cálculo PID** | **100–200 ms** | <0.5 ms | período determinístico (NFR-001) |
 | Atuador PWM | 100–200 ms | <0.1 ms | 0–100% |
 
@@ -175,13 +176,14 @@ Ambos atualizam `ControlState::pid` ao concluir e voltam a AUTO (`FR-024`).
 ### 8.1 Access Point (FR-001–FR-003, Q-005)
 
 ```cpp
-const char* ssid = ("ESP8266-" + String(ESP.getChipId(), HEX)).c_str();
-WiFi.softAP(ssid);                      // sem senha
+char ssid_[32];
+snprintf(ssid_, sizeof(ssid_), "%s%06X", "ESP8266-", ESP.getChipId());
+WiFi.softAP(ssid_, NULL, AP_SOFTAP_CHANNEL, 0, AP_MAX_CONNECTIONS); // multicliente (até 4)
 IPAddress ip(192,168,4,1), gw(192,168,4,1), mask(255,255,255,0);
 WiFi.softAPConfig(ip, gw, mask);        // IP estático + DHCP na sub-rede
 ```
 
-SSID **derivado do MAC/chip ID** (`ESP8266-XXXXXX`).
+SSID **derivado do MAC/chip ID** (`ESP8266-XXXXXX`). O AP aceita **até `AP_MAX_CONNECTIONS` (4) clientes simultâneos** e o `ESP8266WebServer` atende conexões concorrentes (Decisão D-006). O ESP8266 opera a **160 MHz** (`board_build.f_cpu = 160000000L`, Decisão D-007).
 
 ### 8.2 Endpoints e contrato JSON
 
@@ -198,9 +200,13 @@ Exemplo `GET /api/state`:
   "pv": 25.5, "mv": 40.0, "setpoint": 50.0,
   "mode": "auto", "alarm": false, "sensor_fail": false,
   "pid": { "p": 1.5, "i": 0.2, "d": 0.05, "enableP": true, "enableD": false },
-  "ts": 1234567
+  "ts": 1234567,
+  "health": { "cpu": 160, "load": 7.5, "idle": 92.5, "flash": 4.0, "sketch": 336.0,
+               "heap": 32400, "mblock": 28000, "frag": 3, "up": 4500, "wifi": 1 }
 }
 ```
+
+> O JSON é gerado em **buffer estático** (`snprintf`) no `/api/state` — sem alocação dinâmica no polling (Decisão D-009 / `NFR-007`).
 
 `POST /api/control` (corpo) — campos opcionais:
 
@@ -218,7 +224,7 @@ Regras: `setpoint` saturado em 20–80; `mv` em 0–100; valores inválidos → 
 
 ### 8.3 Atualização em tempo real (Q-004)
 
-O dashboard faz **`fetch('/api/state')` a cada ~500 ms–1 s** (polling assíncrono). Nota: como a página é servida do mesmo MCU, o *polling* é a opção mais leve — não há push de WebSocket (`NFR-003`, `FR-031`).
+O dashboard faz **`fetch('/api/state')` a cada 1 s** (polling assíncrono, Decisão D-005), com **timeout (AbortController) e trava anti-sobreposição** para não empilhar requisições no ESP8266. Nota: como a página é servida do mesmo MCU, o *polling* é a opção mais leve — não há push de WebSocket (`NFR-003`, `FR-031`).
 
 ## 9. IHM — Direção estética
 
@@ -233,7 +239,7 @@ O dashboard faz **`fetch('/api/state')` a cada ~500 ms–1 s** (polling assíncr
 - **Sem estética genérica (NFR-021):** sem gradientes roxos sobre branco, sem layout previsível de dashboard padrão.
 - **Desempenho (NFR-022):** sem rolagem (*single viewport*) e animações a 60 fps com dados atualizando a cada 500 ms–1 s.
 
-**Componentes da IHM:** header (título/modo/alarme), card PV (numérico + *gauge* radial + gráfico), card MV (numérico + *gauge* + gráfico), painel de controle (setpoint, slider manual, checkboxes P/D, seletor de modo, seletor/start de autotuning), com *hints* em todos (`FR-030`).
+**Componentes da IHM:** header (título/modo/alarme + **barra de saúde do MCU**: CPU, carga/idle, heap, bloco livre, flash, uptime e clientes Wi-Fi — `FR-034`), card PV (numérico + *gauge* radial + gráfico com escala de 10 em 10, grade e eixo de tempo), card MV (idem), painel de controle (setpoint, slider manual, checkboxes P/D — **I sempre ativa**, seletor de modo, seletor/start de autotuning), com *hints* em todos (`FR-030`). Atualização via **polling a cada 1 s**.
 
 ## 10. Recursos e memória
 

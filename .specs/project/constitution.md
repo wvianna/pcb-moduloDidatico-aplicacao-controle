@@ -8,7 +8,7 @@
 - MCU e variante: módulo Espressif ESP8266MOD
 - Placa/revisão: NodeMCU V2 (Amica / ESP-12E / ESP8266MOD)
 - Toolchain/SDK/RTOS: Arduino Core para ESP8266 (versão >= 3.0.0$, baseado no Non-OS SDK OU Non-Preemptive RTOS interno de 2 tarefas); compilação via PlatformIO
-- Clock e alimentação: Clock padrão de 80 MHz (configurável para 160 MHz$ se necessário); Alimentação 5V via Micro-USB ou gpio(regulador interno AMS1117 para 3.3 V na placa).
+- Clock e alimentação: Clock **160 MHz** (definido em `platformio.ini` via `board_build.f_cpu`); Alimentação 5V via Micro-USB ou gpio(regulador interno AMS1117 para 3.3 V na placa).
 - Ambientes de validação disponíveis: BANCADA para ESP8266, Wi-Fi, DS18B20 e A0.
 
 ## Princípios obrigatórios

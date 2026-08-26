@@ -67,6 +67,21 @@ static void test_pid() {
   float lowered = pid.compute(50, 35, 0.1f, p, false);      // PV subiu -> D negativo
   CHECK(nearly(base, 20.0f), "derivativo: base (sem variação) = kp*erro");
   CHECK(lowered < base && lowered > 0.0f, "derivativo: PV subindo reduz a saída (amortecimento)");
+
+  // enableD=false: a derivada NÃO deve influenciar a saída (apenas P).
+  p.enableP = true; p.enableD = false; p.kp = 1.0f; p.kd = 2.0f;
+  pid.reset();
+  pid.compute(50, 30, 0.1f, p, false);                   // prevPv = 30
+  float baseD = pid.compute(50, 30, 0.1f, p, false);     // sem variação -> P=20
+  float rampD = pid.compute(50, 35, 0.1f, p, false);     // PV subiu, mas D desabilitado -> P=15
+  CHECK(nearly(baseD, 20.0f) && nearly(rampD, 15.0f),
+        "enableD=false: sem ação derivativa (só P)");
+
+  // enableP=false: sem termo proporcional.
+  p.enableP = false; p.enableD = false; p.ki = 0.0f;
+  pid.reset();
+  float noP = pid.compute(50, 20, 0.1f, p, false);
+  CHECK(nearly(noP, 0.0f), "enableP=false: sem termo proporcional");
 }
 
 static void test_alarm() {
