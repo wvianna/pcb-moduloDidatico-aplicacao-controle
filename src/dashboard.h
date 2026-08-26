@@ -227,34 +227,62 @@ button.primary:hover{background:#0a5a4e}
 const POLL_MS = 1000;
 let pvHist=[], mvHist=[];
 const PN=20, PX=90; // PV range
-
 const $=id=>document.getElementById(id);
 function clamp(v,a,b){return Math.max(a,Math.min(b,v));}
 
+// Cache de elementos — evita getElementById repetido a cada poll.
+const E={
+  pv:$('pv-val'), mv:$('mv-val'), sp:$('sp'), slider:$('slider'),
+  sliderVal:$('slider-val'), modePill:$('mode-pill'),
+  sensorBadge:$('sensor-badge'), alarmBadge:$('alarm-badge'),
+  btnManual:$('btn-manual'), btnAuto:$('btn-auto'),
+  kp:$('kp'), ki:$('ki'), kd:$('kd'), enP:$('enP'), enD:$('enD'),
+  pvG:$('pv-g'), mvG:$('mv-g'), pvChart:$('pv-chart'), mvChart:$('mv-chart'),
+  hCpu:$('h-cpu'), hLoad:$('h-load'), hIdle:$('h-idle'), hHeap:$('h-heap'),
+  hMblock:$('h-mblock'), hFlash:$('h-flash'), hUp:$('h-up'), hWifi:$('h-wifi'),
+  btnTune:$('btn-tune'), tmethod:$('tmethod')
+};
+
+// Escreve no DOM apenas quando o valor muda (evita layout/paint desnecessário).
+const last={};
+function setText(key,el,val){ if(last[key]===val) return; last[key]=val; el.textContent=val; }
+function setVal(key,el,val){ if(last[key]===val) return; last[key]=val; el.value=val; }
+function setChecked(el,val){ if(el.checked===val) return; el.checked=val; }
+function setGauge(el,pct,color){
+  const arr=clamp(pct,0,100).toFixed(1)+' 100';
+  if(last[el.id+'_a']!==arr){ last[el.id+'_a']=arr; el.style.strokeDasharray=arr; }
+  if(last[el.id+'_c']!==color){ last[el.id+'_c']=color; el.style.stroke=color; }
+}
+
 async function postControl(body){
   const r=await fetch('/api/control',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  if(r.ok){ fetchState(); }
+  if(r.ok){ fetchState(); }   // refresh imediato; o ciclo agenda o próximo
 }
 
-let fetching=false;
+// Polling encadeado — nunca sobrepõe requisições (mais eficiente no ESP8266).
+let fetching=false, scheduled=false;
+function scheduleNext(){
+  if(scheduled) return;
+  scheduled=true;
+  setTimeout(()=>{ scheduled=false; fetchState(); }, POLL_MS);
+}
 async function fetchState(){
-  if(fetching) return;               // evita requisições sobrepostas (esp8266)
+  if(fetching) return;
   fetching=true;
+  const ctrl=new AbortController();
+  const t=setTimeout(()=>ctrl.abort(),2500);
   try{
-    const ctrl=new AbortController();
-    const t=setTimeout(()=>ctrl.abort(),2500);
     const s=await (await fetch('/api/state',{signal:ctrl.signal})).json();
-    clearTimeout(t);
     updateUI(s);
-  }catch(e){}finally{fetching=false;}
+  }catch(e){}finally{
+    clearTimeout(t);
+    fetching=false;
+    scheduleNext();
+  }
 }
 
-function setGauge(id,pct,color){
-  const el=$(id); el.style.strokeDasharray=clamp(pct,0,100)+' 100'; el.style.stroke=color;
-}
-
-function drawChart(id,data,lo,hi,step,color){
-  const c=$(id); const ctx=c.getContext('2d');
+function drawChart(c,data,lo,hi,step,color){
+  const ctx=c.getContext('2d');
   const dpr=window.devicePixelRatio||1;
   const w=c.clientWidth*dpr, h=c.clientHeight*dpr;
   if(c.width!==w||c.height!==h){c.width=w;c.height=h;}
@@ -308,43 +336,60 @@ function drawChart(id,data,lo,hi,step,color){
   ctx.beginPath(); ctx.arc(lx,ly,3*dpr,0,7); ctx.fillStyle=color; ctx.fill();
 }
 
+// Redesenho dos gráficos coalescido em um único requestAnimationFrame por ciclo.
+let chartFrame=null;
+function scheduleCharts(){
+  if(chartFrame) return;
+  chartFrame=requestAnimationFrame(()=>{
+    chartFrame=null;
+    drawChart(E.pvChart,pvHist,PN,PX,10,'#0F7D6B');
+    drawChart(E.mvChart,mvHist,0,100,10,'#E5600C');
+  });
+}
+
 function updateUI(s){
-  $('pv-val').textContent=(s.pv!=null)?s.pv.toFixed(1):'--';
-  $('mv-val').textContent=(s.mv!=null)?s.mv.toFixed(0):'--';
-  $('sp').value=s.setpoint;
+  setText('pv',E.pv, (s.pv!=null)?s.pv.toFixed(1):'--');
+  setText('mv',E.mv, (s.mv!=null)?s.mv.toFixed(0):'--');
+  if(document.activeElement!==E.sp) setVal('sp',E.sp, s.setpoint);
   const pvPct=((s.pv-PN)/(PX-PN))*100;
-  setGauge('pv-g',pvPct, s.alarm?'#E5600C':'#0F7D6B');
-  setGauge('mv-g',s.mv,'#E5600C');
-  const sb=$('sensor-badge');
-  if(s.sensor_fail){sb.classList.add('alarm');sb.innerHTML='<i></i>ERRO SENSOR';}
-  else{sb.classList.remove('alarm');sb.innerHTML='<i></i>SENSOR';}
-  const ab=$('alarm-badge');
-  ab.classList.toggle('alarm',s.alarm);
-  ab.innerHTML= s.alarm?'<i></i>ALARME':'<i></i>ALARME';
-  $('mode-pill').textContent=(s.mode||'').toUpperCase();
-  $('btn-manual').classList.toggle('active',s.mode==='manual');
-  $('btn-auto').classList.toggle('active',s.mode==='auto');
-  $('slider').value=s.mv; $('slider-val').textContent=Math.round(s.mv)+'%';
-  $('kp').value=s.pid.p; $('ki').value=s.pid.i; $('kd').value=s.pid.d;
-  // Não sobrescreve os checkboxes enquanto o usuário está interagindo com eles.
-  if(document.activeElement!==$('enP')) $('enP').checked=s.pid.enableP;
-  if(document.activeElement!==$('enD')) $('enD').checked=s.pid.enableD;
+  setGauge(E.pvG, pvPct, s.alarm?'#E5600C':'#0F7D6B');
+  setGauge(E.mvG, s.mv, '#E5600C');
+
+  const sens = s.sensor_fail ? '<i></i>ERRO SENSOR' : '<i></i>SENSOR';
+  setText('sensor', E.sensorBadge, sens);
+  E.sensorBadge.classList.toggle('alarm', !!s.sensor_fail);
+  const alm = '<i></i>ALARME';
+  setText('alarm', E.alarmBadge, alm);
+  E.alarmBadge.classList.toggle('alarm', !!s.alarm);
+
+  setText('mode', E.modePill, (s.mode||'').toUpperCase());
+  E.btnManual.classList.toggle('active', s.mode==='manual');
+  E.btnAuto.classList.toggle('active', s.mode==='auto');
+
+  if(document.activeElement!==E.slider) setVal('slider', E.slider, s.mv);
+  setText('sliderVal', E.sliderVal, Math.round(s.mv)+'%');
+  if(document.activeElement!==E.kp) setVal('kp', E.kp, s.pid.p);
+  if(document.activeElement!==E.ki) setVal('ki', E.ki, s.pid.i);
+  if(document.activeElement!==E.kd) setVal('kd', E.kd, s.pid.d);
+  // Não sobrescreve checkboxes/slider durante interação do usuário.
+  if(document.activeElement!==E.enP) setChecked(E.enP, !!s.pid.enableP);
+  if(document.activeElement!==E.enD) setChecked(E.enD, !!s.pid.enableD);
+
   pvHist.push(s.pv); if(pvHist.length>60)pvHist.shift();
   mvHist.push(s.mv); if(mvHist.length>60)mvHist.shift();
-  drawChart('pv-chart',pvHist,PN,PX,10,'#0F7D6B');
-  drawChart('mv-chart',mvHist,0,100,10,'#E5600C');
+  scheduleCharts();
 
   // Saúde do MCU (cabeçalho).
   const h=s.health||{};
-  $('h-cpu').textContent=(h.cpu!=null)?(Math.round(h.cpu)+' MHz'):'--';
-  $('h-load').textContent=(h.load!=null)?(h.load.toFixed(1)+'%'):'--';
-  $('h-idle').textContent=(h.idle!=null)?(h.idle.toFixed(1)+'%'):'--';
+  setText('hCpu', E.hCpu, (h.cpu!=null)?(Math.round(h.cpu)+' MHz'):'--');
+  setText('hLoad', E.hLoad, (h.load!=null)?(h.load.toFixed(1)+'%'):'--');
+  setText('hIdle', E.hIdle, (h.idle!=null)?(h.idle.toFixed(1)+'%'):'--');
   const heapKB=(h.heap!=null)?(h.heap/1024):null;
-  $('h-heap').textContent=(heapKB!=null)?(heapKB.toFixed(1)+' KB · '+Math.round(h.frag||0)+'%'):'--';
-  $('h-mblock').textContent=(h.mblock!=null)?((h.mblock/1024).toFixed(1)+' KB'):'--';
-  $('h-flash').textContent=(h.flash!=null)?(h.sketch.toFixed(0)+' KB / '+h.flash.toFixed(1)+' MB'):'--';
-  $('h-up').textContent=(h.up!=null)?fmtUptime(h.up):'--';
-  $('h-wifi').textContent=(h.wifi!=null)?(h.wifi+' cli'):'--';
+  setText('hHeap', E.hHeap, (heapKB!=null)?(heapKB.toFixed(1)+' KB · '+Math.round(h.frag||0)+'%'):'--');
+  setText('hMblock', E.hMblock, (h.mblock!=null)?((h.mblock/1024).toFixed(1)+' KB'):'--');
+  setText('hFlash', E.hFlash, (h.flash!=null)?(h.sketch.toFixed(0)+' KB / '+h.flash.toFixed(1)+' MB'):'--');
+  setText('hUp', E.hUp, (h.up!=null)?fmtUptime(h.up):'--');
+  setText('hWifi', E.hWifi, (h.wifi!=null)?(h.wifi+' cli'):'--');
 }
 
 function fmtUptime(sec){
@@ -353,20 +398,19 @@ function fmtUptime(sec){
   return h>0? (h+'h '+m+'m') : (m>0? (m+'m '+s2+'s') : (s2+'s'));
 }
 
-$('sp').addEventListener('change',()=>postControl({setpoint:parseFloat($('sp').value)}));
-$('btn-manual').addEventListener('click',()=>postControl({mode:'manual'}));
-$('btn-auto').addEventListener('click',()=>postControl({mode:'auto'}));
-$('slider').addEventListener('input',()=>$('slider-val').textContent=$('slider').value+'%');
-$('slider').addEventListener('change',()=>postControl({mv:parseFloat($('slider').value),mode:'manual'}));
-$('kp').addEventListener('change',()=>postControl({pid:{p:parseFloat($('kp').value)}}));
-$('ki').addEventListener('change',()=>postControl({pid:{i:parseFloat($('ki').value)}}));
-$('kd').addEventListener('change',()=>postControl({pid:{d:parseFloat($('kd').value)}}));
-$('enP').addEventListener('change',()=>postControl({pid:{enableP:$('enP').checked}}));
-$('enD').addEventListener('change',()=>postControl({pid:{enableD:$('enD').checked}}));
-$('btn-tune').addEventListener('click',()=>postControl({tuning:{method:$('tmethod').value}}));
+E.sp.addEventListener('change',()=>postControl({setpoint:parseFloat(E.sp.value)}));
+E.btnManual.addEventListener('click',()=>postControl({mode:'manual'}));
+E.btnAuto.addEventListener('click',()=>postControl({mode:'auto'}));
+E.slider.addEventListener('input',()=>setText('sliderVal',E.sliderVal,E.slider.value+'%'));
+E.slider.addEventListener('change',()=>postControl({mv:parseFloat(E.slider.value),mode:'manual'}));
+E.kp.addEventListener('change',()=>postControl({pid:{p:parseFloat(E.kp.value)}}));
+E.ki.addEventListener('change',()=>postControl({pid:{i:parseFloat(E.ki.value)}}));
+E.kd.addEventListener('change',()=>postControl({pid:{d:parseFloat(E.kd.value)}}));
+E.enP.addEventListener('change',()=>postControl({pid:{enableP:E.enP.checked}}));
+E.enD.addEventListener('change',()=>postControl({pid:{enableD:E.enD.checked}}));
+E.btnTune.addEventListener('click',()=>postControl({tuning:{method:E.tmethod.value}}));
 
-fetchState();
-setInterval(fetchState,POLL_MS);
+fetchState();   // ciclo encadeado via setTimeout (substitui o setInterval)
 </script>
 </body>
 </html>

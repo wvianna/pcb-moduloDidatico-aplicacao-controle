@@ -11,8 +11,37 @@ static ControlState* g_cs = nullptr;
 // ---------------------------------------------------------------------------
 // Rota / — dashboard (PROGMEM)
 // ---------------------------------------------------------------------------
+// Envia conteúdo PROGMEM de forma confiável em pedaços (evita "short send" do
+// ESP8266WebServer, que trunca respostas grandes como a página do dashboard).
+static void sendProgmemStream(WiFiClient& client, const char* src, size_t total) {
+  const size_t CHUNK = 512;
+  static char buf[CHUNK];
+  size_t off = 0;
+  while (off < total && client.connected()) {
+    size_t n = (total - off < CHUNK) ? (total - off) : CHUNK;
+    memcpy_P(buf, src + off, n);
+    size_t sent = 0;
+    unsigned tries = 0;
+    while (sent < n && client.connected()) {
+      int w = client.write((const uint8_t*)buf + sent, n - sent);
+      if (w > 0) { sent += (size_t)w; tries = 0; }
+      else {
+        client.flush();
+        if (++tries > 3000) break;   // segurança: evita travamento
+        delay(1);
+      }
+    }
+    client.flush();
+    off += n;
+    yield();
+  }
+}
+
 static void handleRoot() {
-  server.send_P(200, "text/html", DASHBOARD_HTML);
+  const size_t total = strlen_P(DASHBOARD_HTML);
+  server.setContentLength(total);
+  server.send(200, "text/html", "");          // cabeçalho com Content-Length correto
+  sendProgmemStream(server.client(), DASHBOARD_HTML, total);
 }
 
 // ---------------------------------------------------------------------------
