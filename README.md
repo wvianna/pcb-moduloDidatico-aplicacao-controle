@@ -125,20 +125,22 @@ Exemplo de saída (o firmware imprime um status a cada 2 s):
 
 ```mermaid
 sequenceDiagram
-    participant LOOP as loop()
-    participant WEB as web_server
-    participant SENS as sensor
-    participant CTRL as control
-    participant BZ as buzzer
+    participant MAIN as Main loop
+    participant WEB as Servidor web
+    participant SENS as Sensor
+    participant CTRL as Controle
+    participant BZ as Buzzer
     participant H as PWM D1
-    LOOP->>WEB: web.handle() (não-bloqueante)
-    LOOP->>SENS: sensor.tick() (conversão assíncrona ~1 Hz)
-    SENS-->>LOOP: nova amostra PV (se pronta)
-    LOOP->>CTRL: ctrl.tick() (alarme + PID/autotune + atuadores)
-    CTRL-->>H: MV 0-100 %
-    CTRL-->>BZ: setAlarm(on/off)
-    LOOP->>BZ: buzzer.tick() (150 ms / 2 s)
+    MAIN->>WEB: web.handle
+    MAIN->>SENS: sensor.tick
+    SENS-->>MAIN: nova amostra PV
+    MAIN->>CTRL: ctrl.tick
+    CTRL-->>H: MV 0 a 100
+    CTRL-->>BZ: setAlarm on/off
+    MAIN->>BZ: buzzer.tick
 ```
+
+> Em cada ciclo o `loop()` atende o servidor, lê o sensor de forma **assíncrona** (~1 Hz), executa o supervisor (alarme + PID/autotuning) e atualiza o buzzer. Nenhuma etapa usa `delay()` bloqueante.
 
 ## 8. Máquina de estados do alarme (histerese)
 
