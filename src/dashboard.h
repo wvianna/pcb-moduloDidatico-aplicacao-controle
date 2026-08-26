@@ -220,11 +220,17 @@ async function postControl(body){
   if(r.ok){ fetchState(); }
 }
 
+let fetching=false;
 async function fetchState(){
+  if(fetching) return;               // evita requisições sobrepostas (esp8266)
+  fetching=true;
   try{
-    const s=await (await fetch('/api/state')).json();
+    const ctrl=new AbortController();
+    const t=setTimeout(()=>ctrl.abort(),2500);
+    const s=await (await fetch('/api/state',{signal:ctrl.signal})).json();
+    clearTimeout(t);
     updateUI(s);
-  }catch(e){}
+  }catch(e){}finally{fetching=false;}
 }
 
 function setGauge(id,pct,color){

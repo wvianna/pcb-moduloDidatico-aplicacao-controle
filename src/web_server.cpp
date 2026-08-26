@@ -19,24 +19,20 @@ static void handleRoot() {
 // GET /api/state — estado atual em JSON
 // ---------------------------------------------------------------------------
 static void handleState() {
-  JsonDocument doc;
-  doc["pv"]        = g_cs->pv;
-  doc["mv"]        = g_cs->mv;
-  doc["setpoint"]  = g_cs->setpoint;
-  doc["mode"]      = modoToString(g_cs->modo);
-  doc["alarm"]     = (g_cs->alarm == EstadoAlarme::ALARME);
-  doc["sensor_fail"] = g_cs->sensor_fail;
-  doc["ts"]        = g_cs->ts;
-
-  JsonObject pid = doc["pid"].to<JsonObject>();
-  pid["p"]       = g_cs->pid.kp;
-  pid["i"]       = g_cs->pid.ki;
-  pid["d"]       = g_cs->pid.kd;
-  pid["enableP"] = g_cs->pid.enableP;
-  pid["enableD"] = g_cs->pid.enableD;
-
-  static char buf[320];
-  serializeJson(doc, buf, sizeof(buf));
+  // JSON em buffer estático (snprintf) — sem alocação dinâmica no caminho de
+  // polling (NFR-007). Evita fragmentação de heap no ESP8266, causa de travamento.
+  static char buf[256];
+  snprintf(buf, sizeof(buf),
+    "{\"pv\":%.2f,\"mv\":%.1f,\"setpoint\":%.1f,\"mode\":\"%s\",\"alarm\":%s,"
+    "\"sensor_fail\":%s,\"ts\":%lu,\"pid\":{\"p\":%.3f,\"i\":%.3f,\"d\":%.3f,"
+    "\"enableP\":%s,\"enableD\":%s}}",
+    g_cs->pv, g_cs->mv, g_cs->setpoint, modoToString(g_cs->modo),
+    (g_cs->alarm == EstadoAlarme::ALARME) ? "true" : "false",
+    g_cs->sensor_fail ? "true" : "false",
+    (unsigned long)g_cs->ts,
+    g_cs->pid.kp, g_cs->pid.ki, g_cs->pid.kd,
+    g_cs->pid.enableP ? "true" : "false",
+    g_cs->pid.enableD ? "true" : "false");
   server.send(200, "application/json", buf);
 }
 
